@@ -1,0 +1,39 @@
+# Arquivos de histórico
+.Rhistory
+.RData
+
+# Arquivos de sessão
+.Rproj.user/
+  .Rproj/
+  .Ruserdata
+
+# Arquivos de configuração
+.Renviron
+.Rprofile
+
+# Arquivos de build e pacotes
+.httr-oauth
+*.tar.gz
+*.tgz
+*.zip
+*.Rcheck/
+
+  # Arquivos de saída
+  output/
+  #*.pdf
+  #*.png
+  #*.jpg
+  #*.svg
+  #*.html
+  #*.md
+  #*.docx
+  #*.csv
+
+  # Arquivos de cache
+  .cache/
+  .Rproj.user/
+  .DS_Store
+
+# Outros
+*~
+  .Rproj.user

@@ -1,0 +1,350 @@
+---
+title: "Relatório de Processamento de Dados - Projeto Castanhão"
+subtitle: "Modelo de Clorofila"
+author: "Carlos Antônio Zarzar"
+date: "10/08/2025"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## 1. Introdução
+
+Este relatório descreve o processamento de dados realizado para o Projeto Castanhão, com foco na construção de um modelo para análise da clorofila em função de variáveis ambientais. O objetivo principal foi consolidar dados de múltiplas planilhas Excel contendo informações sobre:
+
+- Clorofila-a
+- Nitrogênio Total
+- Fósforo Total
+- Turbidez
+- Precipitação
+
+## 2. Metodologia
+
+### 2.1. Carregamento de Pacotes e Preparação do Ambiente
+
+```{r carregamento-pacotes}
+#### Projeto Castanhão - Paulo - Modelo Clorofila
+# Data: 10/08/2025
+# Autor: Carlos Antônio Zarzar
+#-------------------------------------------------------------------------------
+# Objetivo:
+# Juntar os dados de clorofila, Nitrogênio total, Posforo total, Turbidez, profundidade, Precipitação
+
+#-------------------------------------------------------------------------------
+# Pacotes
+library(readxl)
+library(dplyr)
+library(lubridate)
+
+# Limpando área de trabalho
+rm(list = ls())
+```
+
+### 2.2. Importação dos Dados
+
+Os dados foram importados de dois arquivos Excel principais:
+- `Dados Castanhão.xlsx` (contendo 4 planilhas diferentes)
+- `Precipitação.xlsx`
+
+```{r importacao-dados}
+# Importando dados
+df_chl <- read_xlsx("Dados Castanhão.xlsx", sheet = "Clorofila a ")
+df_nt <- read_xlsx("Dados Castanhão.xlsx", sheet = "Nitrogênio Total")
+df_pt <- read_xlsx("Dados Castanhão.xlsx", sheet = "Fósforo Total")
+df_turb <- read_xlsx("Dados Castanhão.xlsx", sheet = "Turbidez")
+df_precip <- read_xlsx("Precipitação.xlsx", sheet = "Precipitação")
+df_precip$Precipitação <- as.numeric(df_precip$Precipitação)
+```
+
+**Observação:** Foram detectados valores NA na conversão da coluna Precipitação.
+
+### 2.3. Padronização das Colunas
+
+Definiu-se um conjunto padrão de colunas para todos os data frames:
+
+```{r padronizacao-colunas}
+# Colunas desejadas
+colunas_desejadas <- c("CAMPANHA","PONTO","PROF","DATA_COLETA","HORARIO","RESULTADO","DESCR_PONTO")
+
+# Lista com os data frames originais
+lista_df <- list(
+  df_chl = df_chl,
+  df_nt = df_nt,
+  df_pt = df_pt,
+  df_turb = df_turb
+)
+
+# Função para selecionar as colunas (mantém só as que existem no DF)
+selecionar_colunas <- function(df) {
+  df[, intersect(colunas_desejadas, colnames(df)), drop = FALSE]
+}
+
+# Aplica a função a todos os data frames
+lista_df <- lapply(lista_df, selecionar_colunas)
+```
+
+### 2.4. Renomeação das Colunas de Resultado
+
+Para facilitar a identificação posterior, a coluna "RESULTADO" foi renomeada conforme o tipo de medição:
+
+```{r renomeacao-colunas}
+# Renomeando as Colunas RESULTADO para cada Data Frame
+lista_df <- list(
+  chl  = df_chl,
+  nt   = df_nt,
+  pt   = df_pt,
+  turb = df_turb
+)
+
+# Criar uma lista vazia para armazenar os data frames processados
+lista_df_processada <- list()
+
+# Loop sobre cada data frame da lista original
+for (nome_df in names(lista_df)) {
+  # Extrai o data frame atual da lista
+  df_atual <- lista_df[[nome_df]]
+  
+  # Seleciona somente as colunas que existem tanto na lista desejada quanto no data frame atual
+  colunas_presentes <- intersect(colunas_desejadas, names(df_atual))
+  df_selecionado <- df_atual[, colunas_presentes, drop = FALSE]
+  
+  # Verifica se a coluna "RESULTADO" está presente para renomeá-la
+  if ("RESULTADO" %in% names(df_selecionado)) {
+    # Renomeia "RESULTADO" para o nome do data frame atual
+    names(df_selecionado)[names(df_selecionado) == "RESULTADO"] <- nome_df
+  }
+  
+  # Salva o data frame processado na lista nova
+  lista_df_processada[[nome_df]] <- df_selecionado
+}
+
+# Reatribui os data frames processados para as variáveis originais
+df_chl  <- lista_df_processada$chl
+df_nt   <- lista_df_processada$nt
+df_pt   <- lista_df_processada$pt
+df_turb <- lista_df_processada$turb
+```
+
+**Resultado:** Cada data frame agora possui colunas padronizadas com a variável de interesse renomeada apropriadamente (chl, nt, pt, turb).
+
+## 3. Análise de Consistência dos Dados
+
+### 3.1. Verificação de Correspondência entre Datasets
+
+```{r verificacao-correspondencia}
+# Análise comparação (match)
+# Dados correspondente
+dados_match <- merge(
+  df_chl,
+  df_nt,
+  by = c("CAMPANHA", "PONTO", "PROF", "DATA_COLETA")
+)
+
+# print(dados_match)
+dim(dados_match)  # Resultado: [1] 330  10
+```
+
+**Resultado:** Foram encontrados 330 registros com correspondência perfeita entre os dados de clorofila e nitrogênio total.
+
+### 3.2. Detecção de Duplicatas
+
+```{r deteccao-duplicatas}
+# Função para detectar duplicatas
+checar_duplicatas <- function(df, nome_df) {
+  df %>%
+    count(CAMPANHA, PONTO, PROF, DATA_COLETA) %>%
+    filter(n > 1) %>%
+    arrange(desc(n)) %>%
+    mutate(dataframe = nome_df)
+}
+
+# Aplicar a função a todos os data frames
+duplicatas <- bind_rows(
+  lapply(names(lista_df), function(nome) {
+    checar_duplicatas(lista_df[[nome]], nome)
+  })
+)
+```
+
+**Resultado:** Foram identificadas 78 chaves duplicadas, principalmente nos dados de clorofila, com alguns registros tendo até 4 repetições para a mesma combinação de campanha, ponto, profundidade e data.
+
+### 3.3. Consolidação dos Dados
+
+```{r consolidacao-dados}
+# Lista com todos os data frames
+lista_df <- list(df_chl, df_nt, df_pt, df_turb)
+
+# Faz o full join de todos de uma vez
+dados_full <- Reduce(function(x, y) {
+  full_join(x, y, by = c("CAMPANHA", "PONTO", "PROF", "DATA_COLETA"))
+}, lista_df)
+
+print(dados_full)
+dim(dados_full)  # Resultado: [1] 1281   16
+```
+
+**Observações importantes:**
+- Foram detectadas relações muitos-para-muitos durante o join
+- O dataset consolidado possui 1.281 registros com 16 colunas
+
+## 4. Limpeza e Filtragem dos Dados
+
+### 4.1. Remoção de Registros sem Clorofila
+
+```{r remocao-sem-clorofila}
+# Excluindo linhas que não têm dados de clorofila
+num_NA <- table(is.na(dados_full$chl))
+cat("Número de linhas excluídas:",num_NA["TRUE"])  # 690 linhas
+df <- dados_full[!is.na(dados_full$chl), ]
+dim(df)  # Resultado: [1] 591  16
+```
+
+### 4.2. Remoção de Registros sem Variáveis Explicativas
+
+```{r remocao-sem-variaveis}
+# Remove linhas onde nt, pt e turb são todos NA ao mesmo tempo
+df_limpo <- df[!(is.na(df$nt) & is.na(df$pt) & is.na(df$turb)), ]
+num_NA <- table((is.na(df$nt) & is.na(df$pt) & is.na(df$turb)))
+cat("Número de linhas excluídas:",num_NA["TRUE"])  # 1 linha
+dim(df_limpo)  # Resultado: [1] 590  16
+```
+
+## 5. Problema Identificado: Dados Limitados de Turbidez
+
+### 5.1. Análise da Disponibilidade de Dados de Turbidez
+
+```{r analise-turbidez}
+tam_linhas <- dim(df_limpo)[1]
+nao_tem_turb <- table((is.na(df_limpo$turb)))
+
+cat("Tamanho do conjunto de dados após processamento (df_limpo):",tam_linhas)      # 590
+cat("Excluindo linhas que não tem informação da Turbidez:",nao_tem_turb["TRUE"])  # 512
+cat("Dimensão dos dados se excluir NA da Turbidez:",tam_linhas-nao_tem_turb["TRUE"]) # 78
+```
+
+**Problema Crítico:** Apenas 78 registros (13,2%) possuem dados de turbidez, o que representa uma limitação significativa para a modelagem.
+
+### 5.2. Análise Exploratória das Relações
+
+```{r analise-relacoes}
+# Relação da Turbidez com outras variáveis
+plot(df_limpo$turb,df_limpo$chl)
+plot(df_limpo$turb,df_limpo$nt)
+plot(df_limpo$turb,df_limpo$pt)
+```
+
+## 6. Integração com Dados de Precipitação
+
+### 6.1. Preparação dos Dados de Precipitação
+
+```{r preparacao-precipitacao}
+# Selecionando apenas as colunas necessárias
+df_precip <- df_precip[,c(1,4)]  # Data e Precipitação
+
+# Garantir que ambas são Date
+df_limpo$DATA_COLETA <- as.Date(df_limpo$DATA_COLETA)
+df_precip$Data <- as.Date(df_precip$Data)
+```
+
+### 6.2. Join por Mês e Ano
+
+```{r join-temporal}
+# Criar colunas auxiliares de ano e mês
+df_limpo <- df_limpo %>%
+  mutate(ano = year(DATA_COLETA),
+         mes = month(DATA_COLETA))
+
+df_precip <- df_precip %>%
+  mutate(ano = year(Data),
+         mes = month(Data))
+
+# Fazer o join pelo ano e mês
+df_junto <- df_limpo %>%
+  left_join(df_precip, by = c("ano", "mes"))
+```
+
+### 6.3. Dataset Final
+
+```{r dataset-final}
+# Dados oficiais para fazer a modelagem
+df_castanhao <- df_junto[,c("CAMPANHA","PONTO","PROF",
+                           "DATA_COLETA","HORARIO.x","chl",
+                           "nt", "pt", "turb", "Precipitação",
+                           "DESCR_PONTO.x","mes","ano")]
+```
+
+## 7. Resultados e Estatísticas Finais
+
+### 7.1. Características do Dataset Final
+
+- **Total de registros:** 590
+- **Período:** 2013-2025
+- **Variáveis principais:**
+  - `chl`: Clorofila-a (mg/L) - 100% dos registros
+  - `nt`: Nitrogênio Total (mg/L) - ~87% dos registros
+  - `pt`: Fósforo Total (mg/L) - ~87% dos registros
+  - `turb`: Turbidez (NTU) - ~13% dos registros
+  - `Precipitação`: mm/mês - 100% dos registros
+
+### 7.2. Análise Exploratória Preliminar
+
+```{r analise-exploratoria}
+# Relação Turbidez e Precipitação
+plot(df_castanhao$turb,df_castanhao$Precipitação)
+
+# Primeiras 6 observações
+head(as.data.frame(df_castanhao))
+```
+
+```{r dimensoes-finais}
+# Dimensões finais do dataset
+cat("Dimensões do dataset final:", dim(df_castanhao)[1], "observações e", dim(df_castanhao)[2], "variáveis\n")
+
+# Resumo das variáveis numéricas
+summary(df_castanhao[,c("chl", "nt", "pt", "turb", "Precipitação")])
+```
+
+**Exemplo dos dados processados:**
+```
+  CAMPANHA  PONTO PROF DATA_COLETA           HORARIO.x  chl   nt   pt turb Precipitação
+1 fev/2013 CTN-20  0.3  2013-02-19 1899-12-31 10:30:00 6.41 0.03 0.01 3.52         66.9
+2 fev/2013 CTN-18  0.3  2013-02-19 1899-12-31 15:00:00 2.67 0.03 0.01   NA         66.9
+```
+
+## 8. Considerações e Limitações
+
+### 8.1. Principais Limitações Identificadas
+
+1. **Dados de Turbidez Limitados:** Apenas 13,2% dos registros possuem dados de turbidez, o que pode comprometer a capacidade de modelagem desta variável.
+
+2. **Horários Inconsistentes:** Muitos registros apresentam horário como "00:00:00", indicando possível inconsistência na coleta temporal.
+
+3. **Duplicatas:** Foram identificadas chaves duplicadas que podem requerer tratamento adicional.
+
+### 8.2. Recomendações
+
+1. **Interpolação de Turbidez:** Considerar métodos de interpolação ou estimativa da turbidez com base em outras variáveis disponíveis (precipitação, clorofila, nutrientes).
+
+2. **Análise Temporal:** Investigar mais profundamente as inconsistências nos horários de coleta.
+
+3. **Tratamento de Duplicatas:** Definir critério para tratamento das observações duplicadas.
+
+## 9. Próximos Passos
+
+1. Desenvolvimento de modelo de regressão para estimar turbidez
+2. Análise de correlação entre variáveis
+3. Modelagem da clorofila em função das variáveis explicativas disponíveis
+4. Validação cruzada do modelo
+
+---
+
+**Dataset final:** `df_castanhao` com 590 observações e 13 variáveis, pronto para análise e modelagem estatística.
